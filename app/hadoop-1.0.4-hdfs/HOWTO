@@ -1,0 +1,19 @@
+1. Copy `sd-daemon-java.jar` into the `lib` directory of Hadoop, and copy 
+`libsd-daemon-java.so` into the `lib/native/<arch>` directory of Hadoop.
+
+2. Apply the patch to Hadoop: `hdfs-sd-daemon-java.patch`.
+
+3. Build Hadoop, and use the new `hadoop-*-core.jar` instead of the original 
+one after building.
+
+4. Modify the configuration of Hadoop, setting 
+`dfs.client.max.block.acquire.failures` a relatively big value, such as 50.
+
+5. Modify the `start-dfs.sh` script of Hadoop, adding this line at the end:
+`"$bin"/hadoop dfsadmin -safemode leave`. (for experiment only, unsafe!)
+
+6. Copy `setaside-hdfs.service` and `setaside-hdfs.socket` into 
+`/etc/systemd/system` or other configuration directory of systemd, and modify 
+them according to your Hadoop's configuration.
+
+7. Try to start the socket unit: `systemctl start setaside-hdfs.socket`.

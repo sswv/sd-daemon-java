@@ -1,0 +1,16 @@
+[Unit]
+Description=EchoSelectorServer - New style
+
+[Service]
+User=lj
+Group=users
+Type=forking
+ExecStart=/home/lj/dev/yugong/sd-daemon-java/src/java/runEchoSelectorServerNew.sh
+PIDFile=/tmp/EchoSelectorServerNew.pid
+StandardOutput=tty
+StandardError=tty
+TTYPath=/dev/pts/4
+SuccessExitStatus=143
+TimeoutSec=10
+
+[Install]

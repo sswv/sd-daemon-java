@@ -1,0 +1,15 @@
+[Unit]
+Description=Set-aside Hadoop Distributed File System
+
+[Service]
+User=lj
+Group=users
+Type=forking
+ExecStart=/home/lj/hadoop-1.0.4/bin/start-dfs.sh
+ExecStop=/home/lj/hadoop-1.0.4/bin/stop-dfs.sh
+PIDFile=/tmp/hadoop-lj-namenode.pid
+SuccessExitStatus=143
+StandardOutput=journal
+StandardError=journal
+
+[Install]

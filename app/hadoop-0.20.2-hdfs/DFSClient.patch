@@ -1,0 +1,46 @@
+diff --git a/src/hdfs/org/apache/hadoop/hdfs/DFSClient.java b/src/hdfs/org/apache/hadoop/hdfs/DFSClient.java
+index e1c5412..362e827 100644
+--- a/src/hdfs/org/apache/hadoop/hdfs/DFSClient.java
++++ b/src/hdfs/org/apache/hadoop/hdfs/DFSClient.java
+@@ -1544,6 +1544,10 @@ public class DFSClient implements FSConstants, java.io.Closeable {
+      * @throws IOException
+      */
+     private LocatedBlock getBlockAt(long offset) throws IOException {
++        return getBlockAt(offset, true);
++    }
++
++    private LocatedBlock getBlockAt(long offset, boolean updatePosition) throws IOException {
+       assert (locatedBlocks != null) : "locatedBlocks is null";
+       // search cached blocks first
+       int targetBlockIdx = locatedBlocks.findBlock(offset);
+@@ -1557,9 +1561,11 @@ public class DFSClient implements FSConstants, java.io.Closeable {
+       }
+       LocatedBlock blk = locatedBlocks.get(targetBlockIdx);
+       // update current position
+-      this.pos = offset;
+-      this.blockEnd = blk.getStartOffset() + blk.getBlockSize() - 1;
+-      this.currentBlock = blk.getBlock();
++      if (updatePosition) {
++        this.pos = offset;
++        this.blockEnd = blk.getStartOffset() + blk.getBlockSize() - 1;
++        this.currentBlock = blk.getBlock();
++      }
+       return blk;
+     }
+ 
+@@ -1814,6 +1820,7 @@ public class DFSClient implements FSConstants, java.io.Closeable {
+           
+           if (nodes == null || nodes.length == 0) {
+             LOG.info("No node available for block: " + blockInfo);
++            LOG.info("failure times: " + failures);
+           }
+           LOG.info("Could not obtain block " + block.getBlock() + " from any node:  " + ie);
+           try {
+@@ -1822,6 +1829,7 @@ public class DFSClient implements FSConstants, java.io.Closeable {
+           }
+           deadNodes.clear(); //2nd option is to remove only nodes[blockId]
+           openInfo();
++          block = getBlockAt(block.getStartOffset(), false);
+           failures++;
+           continue;
+         }

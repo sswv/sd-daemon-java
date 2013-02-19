@@ -1,0 +1,8 @@
+[Unit]
+Description=EchoServer - New style socket unit
+
+[Socket]
+ListenStream=10008
+Accept=false
+
+[Install]

@@ -1,0 +1,127 @@
+diff --git a/src/core/org/apache/hadoop/ipc/Server.java b/src/core/org/apache/hadoop/ipc/Server.java
+index d5ffcac..6b66943 100644
+--- a/src/core/org/apache/hadoop/ipc/Server.java
++++ b/src/core/org/apache/hadoop/ipc/Server.java
+@@ -85,6 +85,8 @@ import org.apache.hadoop.security.token.TokenIdentifier;
+ import org.apache.hadoop.util.ReflectionUtils;
+ import org.apache.hadoop.util.StringUtils;
+ 
++import org.linjian.sd_daemon_java.SdSocketUtil;
++
+ /** An abstract IPC service.  IPC calls take a single {@link Writable} as a
+  * parameter, and return a {@link Writable} as their value.  A service runs on
+  * a port and is defined by a parameter class and a value class.
+@@ -291,14 +293,28 @@ public abstract class Server {
+     private int backlogLength = conf.getInt("ipc.server.listen.queue.size", 128);
+     private ExecutorService readPool; 
+    
+-    public Listener() throws IOException {
++    public Listener(boolean sd_daemon_java) throws IOException {
++      LOG.info("sd-daemon-java: new Listener, sd_daemon_java=" + sd_daemon_java);
+       address = new InetSocketAddress(bindAddress, port);
+-      // Create a new server socket and set to non blocking mode
+-      acceptChannel = ServerSocketChannel.open();
+-      acceptChannel.configureBlocking(false);
+-
+-      // Bind the server socket to the local host and port
+-      bind(acceptChannel.socket(), address, backlogLength);
++      if (!sd_daemon_java) {
++          // Create a new server socket and set to non blocking mode
++          acceptChannel = ServerSocketChannel.open();
++          acceptChannel.configureBlocking(false);
++          // Bind the server socket to the local host and port
++          bind(acceptChannel.socket(), address, backlogLength);
++      } else {
++          // Using sd-daemon-java
++          try {
++              acceptChannel = SdSocketUtil.openBindServerSocketChannel(address);
++          } catch (SecurityException e) {
++              LOG.error("sd-daemon-java: SecurityException in openBindServerSocketChannel", e);
++              throw new IOException("SecurityException in openBindServerSocketChannel");
++          } catch (ReflectiveOperationException e) {
++              LOG.error("sd-daemon-java: ReflectiveOperationException in openBindServerSocketChannel", e);
++              throw new IOException("ReflectiveOperationException in openBindServerSocketChannel");
++          }
++          acceptChannel.configureBlocking(false);
++      }
+       port = acceptChannel.socket().getLocalPort(); //Could be an ephemeral port
+       // create a selector;
+       selector= Selector.open();
+@@ -317,6 +333,10 @@ public abstract class Server {
+       this.setDaemon(true);
+     }
+     
++    public Listener() throws IOException {
++        this(false);
++    }
++    
+     private class Reader implements Runnable {
+       private volatile boolean adding = false;
+       private Selector readSelector = null;
+@@ -1479,8 +1499,14 @@ public abstract class Server {
+       conf.getBoolean(HADOOP_SECURITY_AUTHORIZATION, false);
+     this.isSecurityEnabled = UserGroupInformation.isSecurityEnabled();
+     
+-    // Start the listener here and let it bind to the port
+-    listener = new Listener();
++    if (serverName.equals("NameNode") && 
++            System.getProperty("org.linjian.sd_daemon_java.SdSocketUtil.sdListenFds").equals("1")) {
++        // Using socket created by sd-daemon-java
++        listener = new Listener(true);
++    } else {
++        // Start the listener here and let it bind to the port
++        listener = new Listener();
++    }
+     this.port = listener.getAddress().getPort();    
+     this.rpcMetrics = RpcInstrumentation.create(serverName, this.port);
+     this.tcpNoDelay = conf.getBoolean("ipc.server.tcpnodelay", false);
+diff --git a/src/hdfs/org/apache/hadoop/hdfs/server/namenode/NameNode.java b/src/hdfs/org/apache/hadoop/hdfs/server/namenode/NameNode.java
+index 8ea9def..3287507 100644
+--- a/src/hdfs/org/apache/hadoop/hdfs/server/namenode/NameNode.java
++++ b/src/hdfs/org/apache/hadoop/hdfs/server/namenode/NameNode.java
+@@ -90,6 +90,9 @@ import org.apache.hadoop.security.token.SecretManager.InvalidToken;
+ import org.apache.hadoop.security.token.Token;
+ import org.apache.hadoop.util.StringUtils;
+ 
++import org.linjian.sd_daemon_java.NativeUtil;
++import org.linjian.sd_daemon_java.SdSocketUtil;
++
+ /**********************************************************
+  * NameNode serves as both directory namespace manager and
+  * "inode table" for the Hadoop DFS.  There is a single NameNode
+@@ -149,6 +152,9 @@ public class NameNode implements ClientProtocol, DatanodeProtocol,
+       throw new IOException("Unknown protocol to name node: " + protocol);
+     }
+   }
++  
++  /** Result of SdSocketUtil.sdListenFds(false); */
++  private static int fds = -1;
+     
+   public static final int DEFAULT_PORT = 8020;
+ 
+@@ -259,6 +265,14 @@ public class NameNode implements ClientProtocol, DatanodeProtocol,
+    * @param conf the configuration
+    */
+   private void initialize(Configuration conf) throws IOException {
++    // Using sd-daemon-java
++    int listenPID = SdSocketUtil.initListenPID();
++    fds = SdSocketUtil.sdListenFds(false);
++    System.setProperty("org.linjian.sd_daemon_java.SdSocketUtil.sdListenFds", Integer.toString(fds));
++    if (fds > 1) {
++        throw new IOException("SdSocketUtil.sdListenFds: Too many file descriptors received");
++    }
++    
+     InetSocketAddress socAddr = NameNode.getAddress(conf);
+     UserGroupInformation.setConfiguration(conf);
+     SecurityUtil.login(conf, DFSConfigKeys.DFS_NAMENODE_KEYTAB_FILE_KEY, 
+@@ -291,6 +305,10 @@ public class NameNode implements ClientProtocol, DatanodeProtocol,
+       this.serviceRPCAddress = this.serviceRpcServer.getListenerAddress();
+       setRpcServiceServerAddress(conf);
+     }
++    
++    LOG.info("sd-daemon-java: NameNode initialize, sd_booted=" + NativeUtil.sd_booted() 
++        + ", fds=" + fds + ", listenPID=" + listenPID);
++    
+     this.server = RPC.getServer(this, socAddr.getHostName(),
+         socAddr.getPort(), handlerCount, false, conf, namesystem
+         .getDelegationTokenSecretManager());
